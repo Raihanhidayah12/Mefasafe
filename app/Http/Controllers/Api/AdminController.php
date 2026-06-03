@@ -17,6 +17,7 @@ use App\Models\Promotion;
 use App\Models\ServiceRegistration;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\InsuranceBillingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,10 @@ use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
+    public function __construct(private readonly InsuranceBillingService $billingService)
+    {
+    }
+
     // ─── OVERVIEW / STATS ────────────────────────────────────────────────────
 
     public function stats(): JsonResponse
@@ -348,16 +353,17 @@ class AdminController extends Controller
         $validated = $request->validate([
             'payment_status' => ['sometimes', 'in:pending,verified,rejected'],
             'status'         => ['sometimes', 'in:active,inactive'],
+            'billing_cycle' => ['sometimes', 'in:monthly,yearly'],
+            'grace_period_days' => ['sometimes', 'integer', 'min:1', 'max:90'],
+            'next_payment_due_date' => ['sometimes', 'nullable', 'date'],
         ]);
-
-        if (isset($validated['payment_status']) && $validated['payment_status'] === 'verified') {
-            $validated['status'] = 'active';
-        }
 
         $previousStatus = $policy->payment_status;
         $policy->update($validated);
 
         if ($policy->payment_status === 'verified' && $previousStatus !== 'verified') {
+            $this->billingService->markPaymentVerified($policy);
+
             Transaction::create([
                 'user_id'             => $policy->user_id,
                 'insurance_policy_id' => $policy->id,

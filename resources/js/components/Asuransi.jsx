@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { Shield, Loader2, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { Shield, Loader2, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, Upload } from "lucide-react";
 
 const STATUS_META = {
   pending: { label: "Menunggu Verifikasi", style: "bg-amber-100 text-amber-700", icon: Clock },
@@ -21,6 +21,8 @@ export default function Asuransi({ user }) {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [error, setError] = useState("");
+  const [paymentForms, setPaymentForms] = useState({});
+  const [submittingPayment, setSubmittingPayment] = useState(null);
   const token = localStorage.getItem("mefasafe_token");
 
   useEffect(() => {
@@ -60,6 +62,66 @@ export default function Asuransi({ user }) {
   const formatRupiah = (value) => {
     if (value == null) return "-";
     return `Rp ${Number(value).toLocaleString("id-ID")}`;
+  };
+
+  const formatDate = (value) => {
+    if (!value) return "-";
+    return new Date(value).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  };
+
+  const isPaymentDue = (policy) => {
+    if (!policy.next_payment_due_date) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(policy.next_payment_due_date);
+    due.setHours(0, 0, 0, 0);
+    return due <= today;
+  };
+
+  const canUploadPremium = (policy) => {
+    if (policy.payment_status === "rejected" || policy.status === "inactive") return true;
+    return policy.payment_status === "pending" && !policy.payment_proof_path && isPaymentDue(policy);
+  };
+
+  const updatePaymentForm = (policyId, field, value) => {
+    setPaymentForms((prev) => ({
+      ...prev,
+      [policyId]: { ...(prev[policyId] || {}), [field]: value },
+    }));
+  };
+
+  const submitPremiumPayment = async (policy) => {
+    const form = paymentForms[policy.id] || {};
+
+    if (!form.payment_method || !form.payment_proof) {
+      setError("Pilih metode pembayaran dan unggah bukti premi terlebih dahulu.");
+      return;
+    }
+
+    setSubmittingPayment(policy.id);
+    setError("");
+
+    try {
+      const payload = new FormData();
+      payload.append("user_id", user?.id);
+      payload.append("payment_method", form.payment_method);
+      payload.append("payment_proof", form.payment_proof);
+
+      const res = await axios.post(`/api/v1/insurance-policies/${policy.id}/premium-payment`, payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      setPolicies((prev) => prev.map((item) => item.id === policy.id ? res.data.data : item));
+      setPaymentForms((prev) => ({ ...prev, [policy.id]: {} }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Gagal mengirim bukti pembayaran premi.";
+      setError(msg);
+    } finally {
+      setSubmittingPayment(null);
+    }
   };
 
   return (
@@ -152,7 +214,7 @@ export default function Asuransi({ user }) {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Periode</p>
-                          <p className="text-sm font-bold text-slate-900">{policy.start_date || "-"} - {policy.end_date || "-"}</p>
+                          <p className="text-sm font-bold text-slate-900">{formatDate(policy.start_date)} - {formatDate(policy.end_date)}</p>
                         </div>
                         <div>
                           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Metode Pembayaran</p>
@@ -169,6 +231,56 @@ export default function Asuransi({ user }) {
                           <p className="text-sm font-bold text-slate-900">{policy.status === "active" ? "Aktif" : "Tidak Aktif"}</p>
                         </div>
                       </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Siklus Premi</p>
+                          <p className="text-sm font-bold text-slate-900">{policy.billing_cycle === "yearly" ? "Tahunan" : "Bulanan"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Jatuh Tempo Berikutnya</p>
+                          <p className="text-sm font-bold text-slate-900">{formatDate(policy.next_payment_due_date)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Masa Tenggang</p>
+                          <p className="text-sm font-bold text-slate-900">{policy.grace_period_days || 30} hari</p>
+                        </div>
+                      </div>
+
+                      {canUploadPremium(policy) && (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-bold text-amber-800">Pembayaran premi diperlukan</p>
+                            <p className="text-xs text-amber-700 mt-1">Kirim bukti pembayaran agar admin dapat memverifikasi dan mengaktifkan periode berikutnya.</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <select
+                              value={paymentForms[policy.id]?.payment_method || ""}
+                              onChange={(e) => updatePaymentForm(policy.id, "payment_method", e.target.value)}
+                              className="px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-300"
+                            >
+                              <option value="">Pilih metode bayar</option>
+                              <option value="Transfer Bank">Transfer Bank</option>
+                              <option value="GoPay / OVO">GoPay / OVO</option>
+                              <option value="Dana / ShopeePay">Dana / ShopeePay</option>
+                              <option value="Alfamart / Indomaret">Alfamart / Indomaret</option>
+                            </select>
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.pdf"
+                              onChange={(e) => updatePaymentForm(policy.id, "payment_proof", e.target.files?.[0] || null)}
+                              className="text-sm text-slate-600 file:border-0 file:bg-amber-500 file:text-white file:px-3 file:py-2 file:rounded-xl file:cursor-pointer"
+                            />
+                          </div>
+                          <button
+                            onClick={() => submitPremiumPayment(policy)}
+                            disabled={submittingPayment === policy.id}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 disabled:opacity-60"
+                          >
+                            {submittingPayment === policy.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                            Kirim Bukti Premi
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

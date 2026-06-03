@@ -32,6 +32,7 @@ Route::post('/login', [\App\Http\Controllers\Api\AuthController::class, 'login']
 Route::prefix('v1')->group(function (): void {
     Route::apiResource('users', UserController::class);
     Route::apiResource('insurance-policies', InsurancePolicyController::class);
+    Route::post('/insurance-policies/{id}/premium-payment', [InsurancePolicyController::class, 'submitPremiumPayment']);
     Route::apiResource('claims', ClaimController::class);
     Route::apiResource('transactions', TransactionController::class);
     Route::apiResource('hospital-registrations', HospitalRegistrationController::class);

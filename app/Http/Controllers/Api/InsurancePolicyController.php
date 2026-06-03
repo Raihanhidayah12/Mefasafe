@@ -7,6 +7,7 @@ use App\Models\InsurancePolicy;
 use App\Models\DiscountCoupon;
 use App\Models\PromoCode;
 use App\Models\Transaction;
+use App\Services\InsuranceBillingService;
 use App\Services\PromoCodeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,7 +16,10 @@ use Illuminate\Validation\ValidationException;
 
 class InsurancePolicyController extends Controller
 {
-    public function __construct(private readonly PromoCodeService $promoCodeService)
+    public function __construct(
+        private readonly PromoCodeService $promoCodeService,
+        private readonly InsuranceBillingService $billingService
+    )
     {
     }
 
@@ -73,6 +77,8 @@ class InsurancePolicyController extends Controller
             'status' => ['sometimes', 'in:active,inactive'],
             'payment_method' => ['sometimes', 'nullable', 'in:Transfer Bank,GoPay / OVO,Dana / ShopeePay,Alfamart / Indomaret'],
             'payment_proof' => ['sometimes', 'nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:4096'],
+            'billing_cycle' => ['sometimes', 'in:monthly,yearly'],
+            'grace_period_days' => ['sometimes', 'integer', 'min:1', 'max:90'],
             'discount_code' => ['sometimes', 'nullable', 'string'],
             'promo_code' => ['sometimes', 'nullable', 'string'],
         ]);
@@ -132,6 +138,9 @@ class InsurancePolicyController extends Controller
             'payment_method' => $validated['payment_method'] ?? null,
             'payment_proof_path' => $paymentProofPath,
             'payment_status' => $paymentStatus,
+            'billing_cycle' => $validated['billing_cycle'] ?? 'monthly',
+            'grace_period_days' => $validated['grace_period_days'] ?? 30,
+            'next_payment_due_date' => $validated['start_date'] ?? now()->toDateString(),
         ]);
 
         if ($promoResult) {
@@ -183,20 +192,21 @@ class InsurancePolicyController extends Controller
             'payment_method' => ['sometimes', 'nullable', 'in:Transfer Bank,GoPay / OVO,Dana / ShopeePay,Alfamart / Indomaret'],
             'payment_proof' => ['sometimes', 'nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:4096'],
             'payment_status' => ['sometimes', 'nullable', 'in:pending,verified,rejected'],
+            'billing_cycle' => ['sometimes', 'in:monthly,yearly'],
+            'grace_period_days' => ['sometimes', 'integer', 'min:1', 'max:90'],
+            'next_payment_due_date' => ['sometimes', 'nullable', 'date'],
         ]);
 
         if ($request->hasFile('payment_proof')) {
             $validated['payment_proof_path'] = $this->uploadFile($request->file('payment_proof'));
         }
 
-        if (array_key_exists('payment_status', $validated) && $validated['payment_status'] === 'verified') {
-            $validated['status'] = 'active';
-        }
-
-        $previousStatus = $insurancePolicy->status;
+        $previousPaymentStatus = $insurancePolicy->payment_status;
         $insurancePolicy->fill($validated)->save();
 
-        if ($insurancePolicy->payment_status === 'verified' && $previousStatus !== 'active') {
+        if ($insurancePolicy->payment_status === 'verified' && $previousPaymentStatus !== 'verified') {
+            $this->billingService->markPaymentVerified($insurancePolicy);
+
             Transaction::create([
                 'user_id' => $insurancePolicy->user_id,
                 'insurance_policy_id' => $insurancePolicy->id,
@@ -211,6 +221,39 @@ class InsurancePolicyController extends Controller
             'message' => 'Insurance policy updated successfully.',
             'data' => $insurancePolicy->fresh(),
         ], 200);
+    }
+
+    public function submitPremiumPayment(Request $request, string $id): JsonResponse
+    {
+        $insurancePolicy = InsurancePolicy::findOrFail($id);
+
+        $validated = $request->validate([
+            'user_id' => ['sometimes', 'exists:users,id'],
+            'payment_method' => ['required', 'in:Transfer Bank,GoPay / OVO,Dana / ShopeePay,Alfamart / Indomaret'],
+            'payment_proof' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:4096'],
+        ]);
+
+        $user = \Illuminate\Support\Facades\Auth::user();
+        $requestedUserId = $validated['user_id'] ?? null;
+
+        if ($user && (int) $insurancePolicy->user_id !== (int) $user->id) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        if (! $user && $requestedUserId && (int) $insurancePolicy->user_id !== (int) $requestedUserId) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $insurancePolicy->update([
+            'payment_method' => $validated['payment_method'],
+            'payment_proof_path' => $this->uploadFile($request->file('payment_proof')),
+            'payment_status' => 'pending',
+        ]);
+
+        return response()->json([
+            'message' => 'Bukti pembayaran premi berhasil dikirim. Menunggu verifikasi admin.',
+            'data' => $insurancePolicy->fresh(),
+        ]);
     }
 
     public function destroy(string $id): JsonResponse

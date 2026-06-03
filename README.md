@@ -58,6 +58,10 @@ Dibangun menggunakan **Laravel 13** sebagai backend REST API dan **React 19** se
 - Paket asuransi tersedia (aktif/nonaktif dikelola admin)
 - Detail coverage, premi, dan periode perlindungan
 - Pembelian polis dengan diskon kode promo
+- Siklus pembayaran premi bulanan/tahunan
+- Tanggal jatuh tempo premi berikutnya dan masa tenggang
+- Upload bukti pembayaran premi lanjutan dari halaman polis
+- Auto status tagihan: pending saat jatuh tempo, inactive setelah lewat masa tenggang
 
 ### 💰 Klaim Asuransi
 - Pengajuan klaim dengan upload dokumen pendukung
@@ -109,6 +113,7 @@ Dibangun menggunakan **Laravel 13** sebagai backend REST API dan **React 19** se
 ### 🔔 Sistem Notifikasi
 - Notifikasi terintegrasi dari semua modul
 - Ringkasan notifikasi belum dibaca
+- Notifikasi premi: segera jatuh tempo, menunggu verifikasi, dan lewat masa tenggang
 
 ### 💬 Feedback & Rating
 - Formulir masukan pengguna dengan kategori dan rating bintang
@@ -189,7 +194,10 @@ MefaSafe/
 │   │   ├── Referral, DiscountCoupon, PromoCode, PromoCodeUsage
 │   │   └── ...
 │   └── Services/
-│       └── PromoCodeService.php             # Logika validasi kode promo
+│       ├── PromoCodeService.php             # Logika validasi kode promo
+│       └── InsuranceBillingService.php      # Logika jatuh tempo, masa tenggang, dan billing premi
+├── app/Console/Commands/
+│   └── CheckInsurancePremiums.php          # Command pengecekan tagihan premi otomatis
 │
 ├── resources/js/components/
 │   ├── App.jsx, Dashboard.jsx
@@ -228,7 +236,7 @@ MefaSafe/
 |-------|-----------|---------------|
 | `users` | Data pengguna | `name`, `email`, `password`, `role`, `referral_code` |
 | `profiles` | Profil lengkap | `full_name`, `birth_info`, `address`, `identity_card_path`, `digital_signature_path`, `profile_picture` |
-| `insurance_policies` | Polis asuransi | `policy_number`, `premium_amount`, `coverage_limit`, `status`, `promo_code`, `discount_amount` |
+| `insurance_policies` | Polis asuransi | `policy_number`, `premium_amount`, `coverage_limit`, `status`, `payment_status`, `billing_cycle`, `next_payment_due_date`, `grace_period_days`, `last_payment_at`, `promo_code`, `discount_amount` |
 | `insurance_packages` | Paket tersedia | `name`, `type`, `premium_amount`, `coverage_limit`, `is_active` |
 | `claims` | Pengajuan klaim | `claim_amount`, `description`, `document_path`, `status` |
 | `transactions` | Transaksi keuangan | `transaction_type`, `amount`, `transaction_date`, `status` |
@@ -301,6 +309,27 @@ php artisan serve
 # → http://127.0.0.1:8000
 ```
 
+### Scheduler Premi Berkala
+
+Fitur premi berkala memakai Laravel Scheduler untuk mengecek polis yang sudah jatuh tempo setiap hari jam 08:00.
+
+```bash
+# Jalankan manual untuk testing
+php artisan insurance:check-premiums
+
+# Production: pastikan scheduler Laravel berjalan
+php artisan schedule:work
+```
+
+Alur otomatis:
+
+1. Polis baru menyimpan `billing_cycle`, `next_payment_due_date`, dan `grace_period_days`.
+2. Saat jatuh tempo, `payment_status` berubah menjadi `pending`.
+3. User upload bukti pembayaran premi lanjutan.
+4. Admin verifikasi pembayaran.
+5. Sistem mencatat transaksi `premi_masuk`, mengaktifkan polis, dan memajukan jatuh tempo berikutnya.
+6. Jika melewati masa tenggang, polis berubah menjadi `inactive`.
+
 ### 3. Setup Frontend (React + Vite)
 
 ```bash
@@ -359,6 +388,7 @@ http://127.0.0.1:8000/api
 | `GET` | `/feedbacks/featured` | Testimonial untuk homepage |
 | `GET` | `/my-policies` | Polis asuransi milik user |
 | `GET` | `/insurance-packages` | Daftar paket asuransi |
+| `POST` | `/insurance-policies/{id}/premium-payment` | Upload bukti pembayaran premi lanjutan |
 | `GET/POST` | `/claims` | Daftar & ajukan klaim |
 | `GET/POST` | `/transactions` | Riwayat & tambah transaksi |
 | `GET` | `/hospitals` | Daftar rumah sakit |
@@ -404,6 +434,16 @@ http://127.0.0.1:8000/api
 ---
 
 ## 📝 Changelog
+
+### v2.3.0 · Premi Berkala & Auto Reminder (Juni 2026)
+- ✅ **Billing premi berkala** — dukungan siklus bulanan/tahunan
+- ✅ **Jatuh tempo premi berikutnya** — tersimpan di polis dan tampil di halaman Asuransi
+- ✅ **Masa tenggang** — default 30 hari, dapat dikelola dari backend/admin
+- ✅ **Auto pending/inactive** — command `insurance:check-premiums` menandai tagihan jatuh tempo dan polis lewat masa tenggang
+- ✅ **Upload bukti premi lanjutan** — user dapat mengirim bukti pembayaran dari detail polis
+- ✅ **Verifikasi admin** — admin melihat siklus, jatuh tempo, bukti bayar, lalu memverifikasi pembayaran
+- ✅ **Notifikasi premi** — notifikasi segera jatuh tempo, menunggu verifikasi, dan lewat masa tenggang
+- ✅ **Backfill data lama** — polis existing ikut mendapat jadwal tagihan awal
 
 ### v2.2.0 · Promo, Admin & UX (Mei 2026)
 - ✅ **Program Referral** — kode unik, apply kode teman, kupon diskon otomatis

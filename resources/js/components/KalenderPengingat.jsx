@@ -5,7 +5,7 @@ import axios from "axios";
 import {
   ArrowLeft, Calendar, Plus, Bell, Check, Trash2,
   Clock, ChevronLeft, ChevronRight, Pill, Stethoscope,
-  Syringe, AlarmClock, X, Loader2, AlertCircle,
+  Syringe, AlarmClock, X, Loader2, AlertCircle, CreditCard,
 } from "lucide-react";
 
 const API = "/api/v1";
@@ -14,6 +14,7 @@ const CATEGORY_META = {
   kontrol: { label: "Kontrol",  icon: Stethoscope, color: "from-blue-500 to-cyan-500",    bg: "bg-blue-50",   text: "text-blue-700",   border: "border-blue-200"   },
   obat:    { label: "Obat",     icon: Pill,         color: "from-purple-500 to-pink-500",  bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200" },
   vaksin:  { label: "Vaksin",   icon: Syringe,      color: "from-green-500 to-emerald-500",bg: "bg-green-50",  text: "text-green-700",  border: "border-green-200"  },
+  premi:   { label: "Premi",    icon: CreditCard,   color: "from-orange-500 to-red-500",   bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
   lainnya: { label: "Lainnya",  icon: AlarmClock,   color: "from-orange-500 to-amber-500", bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
 };
 

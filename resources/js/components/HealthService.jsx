@@ -106,6 +106,7 @@ export default function HealthService({ user }) {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentProof, setPaymentProof] = useState(null);
   const [paymentProofName, setPaymentProofName] = useState("");
+  const [billingCycle, setBillingCycle] = useState("monthly");
   const [discountCode, setDiscountCode] = useState("");
   const [appliedPromo, setAppliedPromo] = useState(null);
 
@@ -222,6 +223,7 @@ export default function HealthService({ user }) {
       formData.append("status", "inactive");
       formData.append("payment_method", paymentMethod);
       formData.append("payment_proof", paymentProof);
+      formData.append("billing_cycle", billingCycle);
       if (appliedPromo?.code) {
         formData.append("promo_code", appliedPromo.code);
       } else if (discountCode.trim()) {
@@ -409,6 +411,18 @@ export default function HealthService({ user }) {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Siklus Pembayaran Premi</label>
+                <select
+                  value={billingCycle}
+                  onChange={(e) => setBillingCycle(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 text-sm transition-all"
+                >
+                  <option value="monthly">Bulanan</option>
+                  <option value="yearly">Tahunan</option>
+                </select>
+              </div>
+
               <button
                 type="submit"
                 className={`w-full py-3.5 rounded-xl bg-gradient-to-r ${getPackageStyle(selectedPolis).gradient} text-white font-bold text-sm flex items-center justify-center gap-2 hover:shadow-lg hover:scale-[1.02] transition-all duration-300`}
@@ -440,6 +454,7 @@ export default function HealthService({ user }) {
                   { label: "Nama Tertanggung", value: form.insured_name },
                   { label: "Berlaku Mulai", value: form.start_date },
                   { label: "Berlaku Hingga", value: form.end_date },
+                  { label: "Siklus Premi", value: billingCycle === "yearly" ? "Tahunan" : "Bulanan" },
                   { label: "Coverage Limit", value: formatRupiah(selectedPolis.coverage_limit) },
                   { label: "Premi / Bulan", value: formatRupiah(selectedPolis.premium_amount) },
                   ...(appliedPromo ? [

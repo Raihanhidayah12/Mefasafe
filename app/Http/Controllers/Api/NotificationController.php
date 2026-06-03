@@ -8,6 +8,7 @@ use App\Models\Reminder;
 use App\Models\Transaction;
 use App\Models\HospitalRegistration;
 use App\Models\DoctorConsultation;
+use App\Models\InsurancePolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
@@ -108,7 +109,52 @@ class NotificationController extends Controller
             $notifications[] = $notification;
         }
 
-        // 5. Notifikasi dari Reminders yang jatuh tempo hari ini
+        // 5. Notifikasi premi asuransi
+        $premiumPolicies = InsurancePolicy::where('user_id', $userId)
+            ->whereNotNull('next_payment_due_date')
+            ->whereDate('next_payment_due_date', '<=', Carbon::today()->addDays(7))
+            ->orderBy('next_payment_due_date')
+            ->get();
+
+        foreach ($premiumPolicies as $policy) {
+            $dueDate = Carbon::parse($policy->next_payment_due_date);
+            $graceEndsAt = $dueDate->copy()->addDays((int) ($policy->grace_period_days ?? 30));
+            $isOverGrace = Carbon::today()->greaterThan($graceEndsAt);
+            $isDue = Carbon::today()->greaterThanOrEqualTo($dueDate);
+
+            if ($policy->payment_status === 'verified' && ! $isDue) {
+                $title = 'Premi Segera Jatuh Tempo';
+                $status = $dueDate->diffForHumans();
+                $tone = 'from-blue-400 to-blue-600';
+            } elseif ($isOverGrace || $policy->status === 'inactive') {
+                $title = 'Polis Tidak Aktif';
+                $status = 'Lewat Masa Tenggang';
+                $tone = 'from-red-400 to-red-600';
+            } elseif ($policy->payment_status === 'pending') {
+                $title = 'Pembayaran Premi Menunggu Verifikasi';
+                $status = 'Menunggu';
+                $tone = 'from-amber-400 to-amber-600';
+            } else {
+                $title = 'Premi Sudah Jatuh Tempo';
+                $status = 'Jatuh Tempo';
+                $tone = 'from-orange-400 to-amber-500';
+            }
+
+            $amount = 'Rp ' . number_format((float) $policy->premium_amount, 0, ',', '.');
+            $notifications[] = [
+                'id' => 'premium-' . $policy->id,
+                'type' => 'premium',
+                'title' => $title,
+                'desc' => "Premi polis {$policy->policy_number} sebesar {$amount} jatuh tempo pada " . $dueDate->format('d M Y') . ". Masa tenggang sampai " . $graceEndsAt->format('d M Y') . ".",
+                'status' => $status,
+                'time' => $dueDate->diffForHumans(),
+                'icon' => 'Pembayaran',
+                'tone' => $tone,
+                'created_at' => $policy->next_payment_due_date->toDateTimeString(),
+            ];
+        }
+
+        // 6. Notifikasi dari Reminders yang jatuh tempo hari ini
         $todayReminders = Reminder::where('user_id', $userId)
             ->whereDate('reminder_date', Carbon::today())
             ->where('is_done', false)
@@ -202,6 +248,10 @@ class NotificationController extends Controller
             ->where('status', 'waiting_approval')
             ->count();
 
+        $unreadCount += InsurancePolicy::where('user_id', $userId)
+            ->where('payment_status', 'pending')
+            ->count();
+
         // Count verified items (approved claims + successful transactions)
         $verifiedCount = Claim::where('user_id', $userId)
             ->where('status', 'approved')
@@ -220,6 +270,13 @@ class NotificationController extends Controller
             ->whereIn('status', ['failed', 'pending'])
             ->count();
 
+        $needsAttentionCount += InsurancePolicy::where('user_id', $userId)
+            ->where(function ($query): void {
+                $query->where('payment_status', 'pending')
+                    ->orWhere('status', 'inactive');
+            })
+            ->count();
+
         // Total active notifications today
         $todayNotifications = Claim::where('user_id', $userId)
             ->whereDate('updated_at', Carbon::today())
@@ -236,6 +293,11 @@ class NotificationController extends Controller
         $todayNotifications += \App\Models\Reminder::where('user_id', $userId)
             ->whereDate('reminder_date', Carbon::today())
             ->where('is_done', false)
+            ->count();
+
+        $todayNotifications += InsurancePolicy::where('user_id', $userId)
+            ->whereNotNull('next_payment_due_date')
+            ->whereDate('next_payment_due_date', '<=', Carbon::today())
             ->count();
 
         return response()->json([

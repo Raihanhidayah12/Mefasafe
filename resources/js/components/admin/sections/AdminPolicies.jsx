@@ -13,6 +13,7 @@ const PAY_CFG = {
 };
 
 const TYPE_LABEL = { jiwa: "Jiwa", kesehatan: "Kesehatan", kendaraan: "Kendaraan" };
+const CYCLE_LABEL = { monthly: "Bulanan", yearly: "Tahunan" };
 
 export default function AdminPolicies() {
     const [policies, setPolicies] = useState([]);
@@ -75,6 +76,9 @@ export default function AdminPolicies() {
                                 ["Limit Klaim",     fmt(detail.coverage_limit)],
                                 ["Mulai",           detail.start_date],
                                 ["Berakhir",        detail.end_date],
+                                ["Siklus Premi",    CYCLE_LABEL[detail.billing_cycle] || "-"],
+                                ["Jatuh Tempo",     detail.next_payment_due_date],
+                                ["Masa Tenggang",   detail.grace_period_days ? `${detail.grace_period_days} hari` : "-"],
                                 ["Status Polis",    detail.status],
                                 ["Metode Bayar",    detail.payment_method],
                                 ["Status Bayar",    detail.payment_status],
@@ -126,17 +130,18 @@ export default function AdminPolicies() {
                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">No. Polis</th>
                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Tipe</th>
                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Premi</th>
+                                <th className="text-left px-4 py-3 font-semibold text-slate-600">Jatuh Tempo</th>
                                 <th className="text-left px-4 py-3 font-semibold text-slate-600">Status Bayar</th>
                                 <th className="text-right px-4 py-3 font-semibold text-slate-600">Aksi</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {loading ? (
-                                <tr><td colSpan={6} className="text-center py-12">
+                                <tr><td colSpan={7} className="text-center py-12">
                                     <Loader2 className="w-6 h-6 animate-spin text-blue-500 mx-auto" />
                                 </td></tr>
                             ) : policies.length === 0 ? (
-                                <tr><td colSpan={6} className="text-center py-12 text-slate-400">Tidak ada polis.</td></tr>
+                                <tr><td colSpan={7} className="text-center py-12 text-slate-400">Tidak ada polis.</td></tr>
                             ) : policies.map((p) => {
                                 const cfg = PAY_CFG[p.payment_status] || { label: "-", color: "bg-slate-100 text-slate-500", icon: Clock };
                                 const Icon = cfg.icon;
@@ -150,6 +155,10 @@ export default function AdminPolicies() {
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 font-bold text-slate-900">{fmt(p.premium_amount)}</td>
+                                        <td className="px-4 py-3 text-slate-600">
+                                            <div className="font-semibold">{p.next_payment_due_date || "-"}</div>
+                                            <div className="text-[11px] text-slate-400">{CYCLE_LABEL[p.billing_cycle] || "-"}</div>
+                                        </td>
                                         <td className="px-4 py-3">
                                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${cfg.color}`}>
                                                 <Icon className="w-3 h-3" />{cfg.label}
@@ -164,8 +173,9 @@ export default function AdminPolicies() {
                                                 {p.payment_status === "pending" && (
                                                     <>
                                                         <button onClick={() => handleUpdate(p.id, "verified")}
-                                                            disabled={!!updating}
-                                                            className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 text-xs font-semibold hover:bg-green-200 disabled:opacity-50">
+                                                            disabled={!!updating || !p.payment_proof_path}
+                                                            title={!p.payment_proof_path ? "Belum ada bukti pembayaran" : "Verifikasi pembayaran"}
+                                                            className="px-3 py-1.5 rounded-lg bg-green-100 text-green-700 text-xs font-semibold hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed">
                                                             {updating === p.id + "verified" ? <Loader2 className="w-3 h-3 animate-spin" /> : "Verifikasi"}
                                                         </button>
                                                         <button onClick={() => handleUpdate(p.id, "rejected")}

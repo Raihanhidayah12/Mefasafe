@@ -53,7 +53,7 @@ class ReminderController extends Controller
             'description'   => 'nullable|string',
             'reminder_date' => 'required|date',
             'reminder_time' => 'nullable|date_format:H:i',
-            'category'      => 'required|in:kontrol,obat,vaksin,lainnya',
+            'category'      => 'required|in:kontrol,obat,vaksin,premi,lainnya',
             'repeat'        => 'nullable|in:none,daily,weekly,monthly',
         ]);
 

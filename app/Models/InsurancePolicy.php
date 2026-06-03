@@ -22,6 +22,12 @@ class InsurancePolicy extends Model
         'payment_method',
         'payment_proof_path',
         'payment_status',
+        'billing_cycle',
+        'grace_period_days',
+        'next_payment_due_date',
+        'last_payment_at',
+        'premium_reminder_sent_at',
+        'overdue_reminder_sent_at',
         'promo_code',
         'original_premium_amount',
         'discount_amount',
@@ -34,6 +40,10 @@ class InsurancePolicy extends Model
         'coverage_limit'  => 'decimal:2',
         'start_date'      => 'date',
         'end_date'        => 'date',
+        'next_payment_due_date' => 'date',
+        'last_payment_at' => 'datetime',
+        'premium_reminder_sent_at' => 'datetime',
+        'overdue_reminder_sent_at' => 'datetime',
     ];
 
     public function user(): BelongsTo
